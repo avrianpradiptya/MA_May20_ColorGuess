@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Color Memory Game</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #1a1a2e;
+    font-family: 'Segoe UI', sans-serif;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    color: #fff;
+  }
+
+  /* ── TOP BAR ── */
+  #topbar {
+    background: #16213e;
+    border-bottom: 1px solid #0f3460;
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  #topbar h1 { font-size: 16px; font-weight: 700; letter-spacing: 1px; color: #e94560; white-space: nowrap; }
+  #round-info { font-size: 12px; color: #aaa; white-space: nowrap; }
+  #team-scores { display: flex; gap: 8px; margin-left: auto; flex-wrap: nowrap; }
+
+  .team-pill {
+    display: flex; align-items: center; gap: 5px;
+    padding: 4px 10px; border-radius: 20px;
+    font-size: 12px; font-weight: 700;
+    border: 2px solid transparent;
+    transition: all 0.3s; white-space: nowrap;
+  }
+  .team-pill.active   { border-color: #fff; transform: scale(1.08); }
+  .team-pill.stealing { animation: steal-pulse 0.6s ease-in-out infinite alternate; }
+  @keyframes steal-pulse {
+    from { box-shadow: 0 0 0 0   rgba(245,197,24,0.7); }
+    to   { box-shadow: 0 0 0 8px rgba(245,197,24,0);   }
+  }
+  .t0 { background:#1a3a5c; color:#5bc8ff; }
+  .t1 { background:#3a1a4a; color:#d08aff; }
+  .t2 { background:#1a4a2a; color:#5fffaa; }
+  .t3 { background:#4a2a1a; color:#ffaa55; }
+
+  /* ── MAIN AREA ── */
+  #game-area { flex: 1; display: flex; overflow: hidden; min-height: 0; }
+
+  /* ── LEFT PANEL ── */
+  #left-panel {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    background: #0f3460; border-right: 2px solid #e94560;
+    position: relative; overflow: hidden; min-width: 0;
+  }
+
+  #canvas-container { display: grid; }
+  #base-canvas, #overlay-canvas {
+    grid-area: 1 / 1;
+    max-width: 100%;
+    max-height: calc(100vh - 100px);
+    aspect-ratio: 1 / 1;
+    object-fit: contain;
+    pointer-events: none;
+  }
+
+  #question-label {
+    position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.75); border: 1px solid #e94560; border-radius: 20px;
+    padding: 5px 16px; font-size: 13px; color: #fff;
+    pointer-events: none; white-space: nowrap;
+  }
+  #turn-banner {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    padding: 6px 20px; border-radius: 20px;
+    font-size: 13px; font-weight: 700; letter-spacing: 0.5px;
+    pointer-events: none; white-space: nowrap; transition: all 0.3s; z-index: 10;
+  }
+
+  /* ── RIGHT PANEL ── */
+  #right-panel {
+    width: 320px; flex-shrink: 0; background: #16213e;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 14px; gap: 10px; overflow-y: auto;
+  }
+  #right-panel h2 { font-size: 12px; color: #aaa; text-transform: uppercase; letter-spacing: 1px; align-self: flex-start; }
+
+  #picker-wrapper { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+
+  /* SV square */
+  #sv-container {
+    position: relative; width: 100%; height: 200px;
+    border-radius: 6px; overflow: hidden; cursor: crosshair; flex-shrink: 0;
+  }
+  #sv-canvas { display: block; width: 100%; height: 100%; }
+  #sv-cursor {
+    position: absolute; width: 14px; height: 14px; border-radius: 50%;
+    border: 2px solid #fff; box-shadow: 0 0 0 1px #000;
+    transform: translate(-50%,-50%); pointer-events: none; top: 10%; left: 90%;
+  }
+
+  /* Hue slider */
+  #hue-container { position: relative; width: 100%; height: 16px; border-radius: 8px; overflow: hidden; cursor: pointer; }
+  #hue-canvas { display: block; width: 100%; height: 100%; }
+  #hue-thumb {
+    position: absolute; top: -3px; width: 22px; height: 22px;
+    border-radius: 50%; background: #fff; border: 2px solid #ccc;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.5); transform: translateX(-50%); pointer-events: none;
+  }
+
+  /* Color preview row */
+  #color-row { display: flex; gap: 8px; align-items: center; width: 100%; }
+  #color-preview { width: 44px; height: 44px; border-radius: 8px; border: 2px solid #444; flex-shrink: 0; background: #888; }
+  #hex-input {
+    flex: 1; background: #0f1b2d; border: 1px solid #333; border-radius: 6px;
+    color: #fff; font-size: 14px; font-family: monospace;
+    padding: 7px 8px; text-transform: uppercase; outline: none;
+  }
+  #hex-input:focus { border-color: #e94560; }
+
+  /* RGB inputs */
+  #rgb-row { display: flex; gap: 6px; width: 100%; }
+  .rgb-field { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .rgb-field label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+  .rgb-field input {
+    width: 100%; background: #0f1b2d; border: 1px solid #333; border-radius: 5px;
+    color: #fff; font-size: 13px; text-align: center; padding: 4px 2px; outline: none;
+  }
+  .rgb-field input:focus { border-color: #e94560; }
+
+  /* Buttons */
+  #confirm-btn {
+    width: 100%; padding: 11px; background: #e94560; color: #fff;
+    font-size: 14px; font-weight: 700; border: none; border-radius: 8px;
+    cursor: pointer; letter-spacing: 1px; transition: background 0.2s, transform 0.1s;
+  }
+  #confirm-btn:hover { background: #c73652; }
+  #confirm-btn:active { transform: scale(0.98); }
+  #confirm-btn:disabled { background: #444; color: #777; cursor: default; }
+
+  #next-btn {
+    width: 100%; padding: 11px; background: #0f3460; color: #fff;
+    font-size: 14px; font-weight: 700; border: 2px solid #e94560; border-radius: 8px;
+    cursor: pointer; letter-spacing: 1px; display: none; transition: background 0.2s;
+  }
+  #next-btn:hover { background: #1a4a80; }
+
+  /* ── STEAL BOX ── */
+  #steal-queue {
+    width: 100%; background: #1a0f2e; border: 1px solid #f5c518;
+    border-radius: 8px; padding: 10px 12px;
+    display: none; flex-direction: column; gap: 4px;
+  }
+  #steal-queue.visible { display: flex; }
+  #steal-title     { font-size: 11px; color: #f5c518; text-transform: uppercase; letter-spacing: 1px; }
+  #steal-team-name { font-size: 15px; font-weight: 700; }
+  #steal-attempts  { font-size: 11px; color: #aaa; }
+
+  /* ── RESULT BOX ── */
+  #result-box {
+    width: 100%; background: #0f1b2d; border-radius: 8px; padding: 12px;
+    display: none; flex-direction: column; gap: 6px;
+  }
+  #result-box.visible { display: flex; }
+  #result-title   { font-size: 11px; color: #aaa; text-transform: uppercase; letter-spacing: 1px; }
+  #result-percent { font-size: 34px; font-weight: 800; line-height: 1; }
+  #result-label   { font-size: 12px; color: #ccc; }
+  #scorer-name    { font-size: 12px; font-weight: 700; }
+  #points-gained  { font-size: 15px; font-weight: 700; }
+
+  /* ── ANSWER REVEAL — pure div, shown only when round ends ── */
+  #answer-reveal {
+    width: 100%; display: none; flex-direction: column; gap: 6px;
+    background: #0f1b2d; border-radius: 8px; padding: 12px;
+    border: 1px solid #4ecca3;
+  }
+  #answer-reveal.visible { display: flex; }
+  #answer-reveal-label { font-size: 11px; color: #4ecca3; text-transform: uppercase; letter-spacing: 1px; }
+  #answer-swatches { display: flex; gap: 10px; }
+  .swatch-wrap { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+  .swatch-box  { height: 52px; border-radius: 8px; border: 1px solid #444; }
+  .swatch-lbl  { font-size: 10px; color: #888; text-align: center; }
+
+  /* ── TOAST ── */
+  #toast {
+    position: fixed; top: 60px; left: 50%;
+    transform: translateX(-50%) translateY(-20px);
+    background: #1a1a2e; border: 1px solid #e94560; border-radius: 10px;
+    padding: 10px 22px; font-size: 14px; font-weight: 600; color: #fff;
+    opacity: 0; transition: all 0.3s; pointer-events: none; z-index: 999;
+    text-align: center; min-width: 180px;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ── WINNER OVERLAY ── */
+  #winner-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.88); z-index: 500;
+    align-items: center; justify-content: center;
+  }
+  #winner-overlay.visible { display: flex; }
+  #winner-box {
+    background: #16213e; border: 3px solid #f5c518; border-radius: 20px;
+    padding: 40px 56px; text-align: center; max-width: 480px; width: 90%;
+  }
+  #winner-box h2 { font-size: 13px; color: #aaa; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+  #winner-name  { font-size: 38px; font-weight: 800; margin: 6px 0; }
+  #winner-score { font-size: 18px; color: #f5c518; margin-bottom: 18px; }
+  #final-scores { display: flex; flex-direction: column; gap: 8px; margin-bottom: 22px; }
+  .final-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 16px; border-radius: 8px; font-size: 14px;
+  }
+  .final-row.winner-row { border: 2px solid #f5c518; }
+  #play-again-btn {
+    padding: 12px 32px; background: #e94560; color: #fff;
+    font-size: 15px; font-weight: 700; border: none; border-radius: 10px; cursor: pointer;
+  }
+  #play-again-btn:hover { background: #c73652; }
+
+  #confetti-canvas { position: fixed; inset: 0; pointer-events: none; z-index: 600; }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <h1>🎨 COLOR MEMORY</h1>
+  <span id="round-info">Round 1 / 10</span>
+  <div id="team-scores">
+    <div class="team-pill t0" id="pill-0">🔵 Team 1: 0</div>
+    <div class="team-pill t1" id="pill-1">🟣 Team 2: 0</div>
+    <div class="team-pill t2" id="pill-2">🟢 Team 3: 0</div>
+    <div class="team-pill t3" id="pill-3">🟠 Team 4: 0</div>
+  </div>
+</div>
+
+<!-- GAME AREA -->
+<div id="game-area">
+
+  <!-- LEFT: IMAGE -->
+  <div id="left-panel">
+    <div id="canvas-container">
+      <canvas id="base-canvas"></canvas>
+      <canvas id="overlay-canvas"></canvas>
+    </div>
+    <div id="turn-banner"></div>
+    <div id="question-label">What color is missing?</div>
+  </div>
+
+  <!-- RIGHT: CONTROLS -->
+  <div id="right-panel">
+    <h2>Pick a Color</h2>
+
+    <div id="picker-wrapper">
+      <div id="sv-container">
+        <canvas id="sv-canvas"></canvas>
+        <div id="sv-cursor"></div>
+      </div>
+      <div id="hue-container">
+        <canvas id="hue-canvas"></canvas>
+        <div id="hue-thumb" style="left:0px;"></div>
+      </div>
+      <div id="color-row">
+        <div id="color-preview"></div>
+        <input type="text" id="hex-input" value="#888888" maxlength="7"/>
+      </div>
+      <div id="rgb-row">
+        <div class="rgb-field"><label>R</label><input type="number" id="r-input" min="0" max="255" value="136"/></div>
+        <div class="rgb-field"><label>G</label><input type="number" id="g-input" min="0" max="255" value="136"/></div>
+        <div class="rgb-field"><label>B</label><input type="number" id="b-input" min="0" max="255" value="136"/></div>
+      </div>
+    </div>
+
+    <!-- Steal indicator -->
+    <div id="steal-queue">
+      <div id="steal-title">⚡ Steal Attempt!</div>
+      <div id="steal-team-name"></div>
+      <div id="steal-attempts"></div>
+    </div>
+
+    <!-- Per-guess result feedback -->
+    <div id="result-box">
+      <div id="result-title">Result</div>
+      <div id="result-percent">—</div>
+      <div id="result-label">color match</div>
+      <div id="scorer-name"></div>
+      <div id="points-gained"></div>
+    </div>
+
+    <!-- Answer reveal: hidden until round ends, reads from answerRGB only -->
+    <div id="answer-reveal">
+      <div id="answer-reveal-label">✅ Correct Answer</div>
+      <div id="answer-swatches">
+        <div class="swatch-wrap">
+          <div class="swatch-box" id="guess-swatch"></div>
+          <div class="swatch-lbl">Last guess</div>
+        </div>
+        <div class="swatch-wrap">
+          <div class="swatch-box" id="correct-swatch"></div>
+          <div class="swatch-lbl" id="correct-swatch-lbl">Correct</div>
+        </div>
+      </div>
+    </div>
+
+    <button id="confirm-btn" onclick="confirmGuess()">CONFIRM GUESS</button>
+    <button id="next-btn"    onclick="advanceGame()">NEXT ROUND →</button>
+  </div>
+</div>
+
+<!-- WINNER OVERLAY -->
+<div id="winner-overlay">
+  <div id="winner-box">
+    <h2>🏆 Game Over</h2>
+    <div id="winner-name"></div>
+    <div id="winner-score"></div>
+    <div id="final-scores"></div>
+    <button id="play-again-btn" onclick="location.reload()">PLAY AGAIN</button>
+  </div>
+</div>
+
+<canvas id="confetti-canvas"></canvas>
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  ▸ ROUND DATA
+//  answerRGB is the sole source of truth for the correct color.
+//  No answerHex needed anywhere.
+// ═══════════════════════════════════════════════════════
+const ROUNDS = [
+  { baseImg:"1a.png",  maskImg:"1b.png",  label:"Round 1 — what color is missing?",  answerRGB:{r:255,  g:222,  b:222} },
+  { baseImg:"2a.png",  maskImg:"2b.png",  label:"Round 2 — what color is missing?",  answerRGB:{r:12, g:95, b:172  } },
+  { baseImg:"3a.png",  maskImg:"3b.png",  label:"Round 3 — what color is missing?",  answerRGB:{r:227, g:0,  b:27  } },
+  { baseImg:"4a.png",  maskImg:"4b.png",  label:"Round 4 — what color is missing?",  answerRGB:{r:172, g:136, b:36} },
+  { baseImg:"5a.png",  maskImg:"5b.png",  label:"Round 5 — what color is missing?",  answerRGB:{r:64, g:197, b:194} },
+  { baseImg:"6a.png",  maskImg:"6b.png",  label:"Round 6 — what color is missing?",  answerRGB:{r:242, g:158, b:194} },
+  { baseImg:"7a.png",  maskImg:"7b.png",  label:"Round 7 — what color is missing?",  answerRGB:{r:17, g:83, b:149} },
+  { baseImg:"8a.png",  maskImg:"8b.png",  label:"Round 8 — what color is missing?",  answerRGB:{r:170, g:255, b:0} },
+  { baseImg:"9a.png",  maskImg:"9b.png",  label:"Round 9 — what color is missing?",  answerRGB:{r:245, g:122, b:62} },
+  { baseImg:"10a.png", maskImg:"10b.png", label:"Round 10 — what color is missing?", answerRGB:{r:229, g:128, b:36} },
+];
+
+// ═══════════════════════════════════════════════════════
+//  ▸ CONFIG
+// ═══════════════════════════════════════════════════════
+const TEAMS = [
+  { name:"Team 1", emoji:"🔵" },
+  { name:"Team 2", emoji:"🟣" },
+  { name:"Team 3", emoji:"🟢" },
+  { name:"Team 4", emoji:"🟠" },
+];
+const TEAM_COLORS = ["#5bc8ff","#d08aff","#5fffaa","#ffaa55"];
+const TEAM_BG     = ["#1a3a5c","#3a1a4a","#1a4a2a","#4a2a1a"];
+const SIMILARITY_THRESHOLD = 50;
+
+// ═══════════════════════════════════════════════════════
+//  ▸ STATE
+// ═══════════════════════════════════════════════════════
+let currentRound   = 0;
+let teamScores     = [0,0,0,0];
+let confirmed      = false;
+let roundResolved  = false;
+let turnQueue      = [];
+let currentTurnIdx = 0;
+let lastGuessHex   = "#888888";
+
+// ═══════════════════════════════════════════════════════
+//  ▸ CANVAS / IMAGE
+// ═══════════════════════════════════════════════════════
+const baseCanvas    = document.getElementById("base-canvas");
+const overlayCanvas = document.getElementById("overlay-canvas");
+const bCtx = baseCanvas.getContext("2d");
+const oCtx = overlayCanvas.getContext("2d");
+const svCanvas  = document.getElementById("sv-canvas");
+const svCtx     = svCanvas.getContext("2d");
+const hueCanvas = document.getElementById("hue-canvas");
+const hCtx      = hueCanvas.getContext("2d");
+
+let cachedBase = null, cachedMask = null, cachedRoundImg = -1;
+
+function loadImage(src){
+  return new Promise((res,rej)=>{
+    const img=new Image();
+    img.onload=()=>res(img);
+    img.onerror=()=>rej(new Error("Missing: "+src));
+    img.src=src;
+  });
+}
+
+function setupCanvasSize(img){
+  const maxW=window.innerWidth-340, maxH=window.innerHeight-100;
+  const scale=Math.min(1, maxW/img.naturalWidth, maxH/img.naturalHeight);
+  const W=Math.round(img.naturalWidth*scale), H=Math.round(img.naturalHeight*scale);
+  [baseCanvas,overlayCanvas].forEach(c=>{
+    c.width=W; c.height=H; c.style.width=W+"px"; c.style.height=H+"px";
+  });
+}
+
+async function renderScene(fillHex){
+  const round=ROUNDS[currentRound];
+  if(cachedRoundImg!==currentRound){
+    try{
+      [cachedBase,cachedMask]=await Promise.all([loadImage(round.baseImg),loadImage(round.maskImg)]);
+      cachedRoundImg=currentRound;
+      setupCanvasSize(cachedBase);
+    } catch(e){
+      const W=500,H=500;
+      [baseCanvas,overlayCanvas].forEach(c=>{c.width=W;c.height=H;c.style.width=W+"px";c.style.height=H+"px";});
+      bCtx.fillStyle="#1a2a4a"; bCtx.fillRect(0,0,W,H);
+      bCtx.fillStyle="#aaa"; bCtx.font="bold 16px Segoe UI"; bCtx.textAlign="center";
+      bCtx.fillText("Place "+round.baseImg+" here",W/2,H/2-12);
+      bCtx.font="13px Segoe UI";
+      bCtx.fillText("(+ "+round.maskImg+" for the mask)",W/2,H/2+14);
+      oCtx.clearRect(0,0,W,H);
+      return;
+    }
+  }
+  const W=baseCanvas.width, H=baseCanvas.height;
+  bCtx.clearRect(0,0,W,H); bCtx.drawImage(cachedBase,0,0,W,H);
+  oCtx.clearRect(0,0,W,H); oCtx.drawImage(cachedMask,0,0,W,H);
+  oCtx.globalCompositeOperation="source-atop";
+  oCtx.fillStyle=fillHex||"#888888"; oCtx.fillRect(0,0,W,H);
+  oCtx.globalCompositeOperation="source-over";
+}
+
+// ═══════════════════════════════════════════════════════
+//  ▸ ANSWER REVEAL — pure DOM, zero async, zero canvas
+//    Called only when round is fully resolved.
+//    Reads answerRGB directly from the ROUNDS array.
+// ═══════════════════════════════════════════════════════
+function showAnswerReveal(guessHex, answerRGB){
+  // answerRGB is passed in directly — no round index, no async, no canvas
+  const correctHex = rgbToHex(answerRGB.r, answerRGB.g, answerRGB.b);
+  document.getElementById("guess-swatch").style.background   = guessHex;
+  document.getElementById("correct-swatch").style.background = correctHex;
+  document.getElementById("correct-swatch-lbl").textContent  = "Correct — "+correctHex.toUpperCase();
+  document.getElementById("answer-reveal").classList.add("visible");
+  pulseOverlayReveal(guessHex, answerRGB); 
+}
+
+function pulseOverlayReveal(guessHex, answerRGB) {
+  const correctHex = rgbToHex(answerRGB.r, answerRGB.g, answerRGB.b);
+  const duration   = 2400;   // total pulse duration in ms
+  const cycles     = 3;      // how many times it alternates
+  const start      = performance.now();
+
+  function frame(now) {
+    const elapsed = now - start;
+    if (elapsed >= duration) {
+      // End on the correct color and stop
+      drawOverlay(correctHex);
+      return;
+    }
+    // Sine wave 0→1→0→1… cycling 'cycles' times
+    const t = (Math.sin((elapsed / duration) * cycles * Math.PI * 2 - Math.PI/2) + 1) / 2;
+    const hex = lerpHex(guessHex, correctHex, t);
+    drawOverlay(hex);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+function drawOverlay(hex) {
+  const W = overlayCanvas.width, H = overlayCanvas.height;
+  oCtx.clearRect(0, 0, W, H);
+  oCtx.drawImage(cachedMask, 0, 0, W, H);
+  oCtx.globalCompositeOperation = "source-atop";
+  oCtx.fillStyle = hex;
+  oCtx.fillRect(0, 0, W, H);
+  oCtx.globalCompositeOperation = "source-over";
+}
+
+function lerpHex(hexA, hexB, t) {
+  const a = hexToRgb(hexA), b = hexToRgb(hexB);
+  const r = Math.round(a.r + (b.r - a.r) * t);
+  const g = Math.round(a.g + (b.g - a.g) * t);
+  const b2 = Math.round(a.b + (b.b - a.b) * t);
+  return rgbToHex(r, g, b2);
+}
+
+
+
+function hideAnswerReveal(){
+  document.getElementById("answer-reveal").classList.remove("visible");
+}
+
+// ═══════════════════════════════════════════════════════
+//  ▸ COLOR PICKER
+// ═══════════════════════════════════════════════════════
+let hue=0, sat=0, val=0.53;
+
+function drawSVSquare(){
+  const W=svCanvas.width, H=svCanvas.height;
+  svCtx.clearRect(0,0,W,H);
+  const gH=svCtx.createLinearGradient(0,0,W,0);
+  gH.addColorStop(0,"#ffffff"); gH.addColorStop(1,`hsl(${hue},100%,50%)`);
+  svCtx.fillStyle=gH; svCtx.fillRect(0,0,W,H);
+  const gV=svCtx.createLinearGradient(0,0,0,H);
+  gV.addColorStop(0,"rgba(0,0,0,0)"); gV.addColorStop(1,"rgba(0,0,0,1)");
+  svCtx.fillStyle=gV; svCtx.fillRect(0,0,W,H);
+  const cur=document.getElementById("sv-cursor");
+  cur.style.left=(sat*W)+"px"; cur.style.top=((1-val)*H)+"px";
+  cur.style.borderColor=val>0.5?"#000":"#fff";
+}
+
+function drawHueBar(){
+  const W=hueCanvas.width, H=hueCanvas.height;
+  const g=hCtx.createLinearGradient(0,0,W,0);
+  for(let i=0;i<=360;i+=30) g.addColorStop(i/360,`hsl(${i},100%,50%)`);
+  hCtx.fillStyle=g; hCtx.fillRect(0,0,W,H);
+  document.getElementById("hue-thumb").style.left=(hue/360*W)+"px";
+}
+
+function hsvToRgb(h,s,v){
+  h=h%360; const c=v*s, x=c*(1-Math.abs((h/60)%2-1)), m=v-c;
+  let r=0,g=0,b=0;
+  if(h<60){r=c;g=x;}else if(h<120){r=x;g=c;}else if(h<180){g=c;b=x;}
+  else if(h<240){g=x;b=c;}else if(h<300){r=x;b=c;}else{r=c;b=x;}
+  return{r:Math.round((r+m)*255),g:Math.round((g+m)*255),b:Math.round((b+m)*255)};
+}
+function rgbToHex(r,g,b){ return "#"+[r,g,b].map(v=>v.toString(16).padStart(2,"0")).join(""); }
+function hexToRgb(hex){
+  hex=hex.replace("#","");
+  if(hex.length===3) hex=hex.split("").map(c=>c+c).join("");
+  const n=parseInt(hex,16);
+  return{r:(n>>16)&255,g:(n>>8)&255,b:n&255};
+}
+function rgbToHsv(r,g,b){
+  r/=255;g/=255;b/=255;
+  const max=Math.max(r,g,b),min=Math.min(r,g,b),d=max-min;
+  let h=0,s=max===0?0:d/max,v=max;
+  if(d!==0){
+    if(max===r)h=((g-b)/d)%6;
+    else if(max===g)h=(b-r)/d+2;
+    else h=(r-g)/d+4;
+    h=Math.round(h*60); if(h<0)h+=360;
+  }
+  return{h,s,v};
+}
+
+function updateFromHSV(){
+  const rgb=hsvToRgb(hue,sat,val), hex=rgbToHex(rgb.r,rgb.g,rgb.b);
+  lastGuessHex=hex;
+  document.getElementById("color-preview").style.background=hex;
+  document.getElementById("hex-input").value=hex.toUpperCase();
+  document.getElementById("r-input").value=rgb.r;
+  document.getElementById("g-input").value=rgb.g;
+  document.getElementById("b-input").value=rgb.b;
+  drawSVSquare();
+  if(!confirmed) renderScene(hex);
+}
+function updateFromHex(hex){
+  if(!/^#[0-9a-fA-F]{6}$/.test(hex)) return;
+  const rgb=hexToRgb(hex),hsv=rgbToHsv(rgb.r,rgb.g,rgb.b);
+  hue=hsv.h; sat=hsv.s; val=hsv.v;
+  lastGuessHex=hex;
+  document.getElementById("color-preview").style.background=hex;
+  document.getElementById("r-input").value=rgb.r;
+  document.getElementById("g-input").value=rgb.g;
+  document.getElementById("b-input").value=rgb.b;
+  drawSVSquare(); drawHueBar();
+  if(!confirmed) renderScene(hex);
+}
+function updateFromRGB(){
+  const r=parseInt(document.getElementById("r-input").value)||0;
+  const g=parseInt(document.getElementById("g-input").value)||0;
+  const b=parseInt(document.getElementById("b-input").value)||0;
+  const hex=rgbToHex(r,g,b),hsv=rgbToHsv(r,g,b);
+  hue=hsv.h; sat=hsv.s; val=hsv.v;
+  lastGuessHex=hex;
+  document.getElementById("color-preview").style.background=hex;
+  document.getElementById("hex-input").value=hex.toUpperCase();
+  drawSVSquare(); drawHueBar();
+  if(!confirmed) renderScene(hex);
+}
+
+let svDragging=false;
+function pickSV(e){
+  const rect=svCanvas.getBoundingClientRect();
+  const cx=e.touches?e.touches[0].clientX:e.clientX;
+  const cy=e.touches?e.touches[0].clientY:e.clientY;
+  sat=Math.max(0,Math.min(1,(cx-rect.left)/rect.width));
+  val=Math.max(0,Math.min(1,1-(cy-rect.top)/rect.height));
+  updateFromHSV();
+}
+svCanvas.addEventListener("mousedown",e=>{svDragging=true;pickSV(e);});
+document.addEventListener("mousemove",e=>{if(svDragging)pickSV(e);});
+document.addEventListener("mouseup",()=>svDragging=false);
+
+let hueDragging=false;
+function pickHue(e){
+  const rect=hueCanvas.getBoundingClientRect();
+  const cx=e.touches?e.touches[0].clientX:e.clientX;
+  hue=Math.max(0,Math.min(360,((cx-rect.left)/rect.width)*360));
+  drawHueBar(); updateFromHSV();
+}
+hueCanvas.addEventListener("mousedown",e=>{hueDragging=true;pickHue(e);});
+document.addEventListener("mousemove",e=>{if(hueDragging)pickHue(e);});
+document.addEventListener("mouseup",()=>hueDragging=false);
+
+document.getElementById("hex-input").addEventListener("input",e=>{
+  let v=e.target.value; if(!v.startsWith("#"))v="#"+v; updateFromHex(v);
+});
+["r-input","g-input","b-input"].forEach(id=>{
+  document.getElementById(id).addEventListener("input",updateFromRGB);
+});
+
+// ═══════════════════════════════════════════════════════
+//  ▸ COLOR SIMILARITY — Delta E (CIE Lab)
+// ═══════════════════════════════════════════════════════
+function sRGBtoLinear(c){ c/=255; return c<=0.04045?c/12.92:Math.pow((c+0.055)/1.055,2.4); }
+function rgbToXyz(r,g,b){
+  r=sRGBtoLinear(r); g=sRGBtoLinear(g); b=sRGBtoLinear(b);
+  return{ x:r*0.4124564+g*0.3575761+b*0.1804375,
+          y:r*0.2126729+g*0.7151522+b*0.0721750,
+          z:r*0.0193339+g*0.1191920+b*0.9503041 };
+}
+function xyzToLab(x,y,z){
+  const f=t=>t>0.008856?Math.cbrt(t):7.787*t+16/116;
+  const fx=f(x/0.95047), fy=f(y/1), fz=f(z/1.08883);
+  return{ L:116*fy-16, a:500*(fx-fy), b:200*(fy-fz) };
+}
+function deltaE(rgb1,rgb2){
+  const xyz1=rgbToXyz(rgb1.r,rgb1.g,rgb1.b);
+  const xyz2=rgbToXyz(rgb2.r,rgb2.g,rgb2.b);
+  const l1=xyzToLab(xyz1.x,xyz1.y,xyz1.z);
+  const l2=xyzToLab(xyz2.x,xyz2.y,xyz2.z);
+  return Math.sqrt((l1.L-l2.L)**2+(l1.a-l2.a)**2+(l1.b-l2.b)**2);
+}
+function similarityPct(rgb1,rgb2){
+  return Math.round(Math.min(100,Math.max(0,100-deltaE(rgb1,rgb2))));
+}
+
+// 50–100 pts proportional within the passing band
+function calcPoints(pct){
+  if(pct<SIMILARITY_THRESHOLD) return 0;
+  const norm=(pct-SIMILARITY_THRESHOLD)/(100-SIMILARITY_THRESHOLD);
+  return Math.round(50+norm*50);
+}
+
+// ═══════════════════════════════════════════════════════
+//  ▸ UI HELPERS
+// ═══════════════════════════════════════════════════════
+function updateTeamPills(){
+  TEAMS.forEach((t,i)=>{
+    document.getElementById("pill-"+i).textContent=t.emoji+" "+t.name+": "+teamScores[i];
+  });
+}
+function setActivePill(idx,isSteal){
+  TEAMS.forEach((_,i)=>document.getElementById("pill-"+i).classList.remove("active","stealing"));
+  document.getElementById("pill-"+idx).classList.add(isSteal?"stealing":"active");
+}
+function setTurnBanner(idx,isSteal){
+  const b=document.getElementById("turn-banner");
+  b.textContent=isSteal?"⚡ "+TEAMS[idx].name+" attempting to STEAL!":TEAMS[idx].emoji+" "+TEAMS[idx].name+"'s turn";
+  b.style.background=isSteal?"#3a2200":TEAM_BG[idx];
+  b.style.color=isSteal?"#f5c518":TEAM_COLORS[idx];
+  b.style.border="1px solid "+(isSteal?"#f5c518":TEAM_COLORS[idx]);
+}
+function showStealBox(idx,teamsRemaining){
+  document.getElementById("steal-queue").classList.add("visible");
+  const el=document.getElementById("steal-team-name");
+  el.textContent=TEAMS[idx].emoji+" "+TEAMS[idx].name;
+  el.style.color=TEAM_COLORS[idx];
+  document.getElementById("steal-attempts").textContent=
+    teamsRemaining>0
+      ?""+teamsRemaining+" more team"+(teamsRemaining>1?"s":"")+" can steal if this fails"
+      :"Last chance — no more steals after this";
+}
+function hideStealBox(){ document.getElementById("steal-queue").classList.remove("visible"); }
+
+function showResultBox(pct,points,teamIdx,passing,allFailed){
+  document.getElementById("result-box").classList.add("visible");
+  const rpEl=document.getElementById("result-percent");
+  rpEl.textContent=pct+"%";
+  rpEl.style.color=pct>=SIMILARITY_THRESHOLD?"#4ecca3":pct>=60?"#f5c518":"#e94560";
+  document.getElementById("result-label").textContent="color match";
+  const sEl=document.getElementById("scorer-name");
+  sEl.textContent=TEAMS[teamIdx].emoji+" "+TEAMS[teamIdx].name;
+  sEl.style.color=TEAM_COLORS[teamIdx];
+  const ptEl=document.getElementById("points-gained");
+  if(passing)        { ptEl.textContent="Passing to next team…"; ptEl.style.color="#f5c518"; }
+  else if(allFailed) { ptEl.textContent="No points awarded";     ptEl.style.color="#e94560"; }
+  else {
+    ptEl.textContent="+"+points+" pts"+(currentTurnIdx>0?" (steal!)":"");
+    ptEl.style.color="#4ecca3";
+  }
+}
+
+function resetPicker(){ hue=0; sat=0; val=0.53; updateFromHSV(); drawHueBar(); }
+
+function showToast(msg,ms=3000){
+  const t=document.getElementById("toast");
+  t.textContent=msg; t.classList.add("show");
+  setTimeout(()=>t.classList.remove("show"),ms);
+}
+
+// ═══════════════════════════════════════════════════════
+//  ▸ ROUND SETUP
+// ═══════════════════════════════════════════════════════
+function setupRound(){
+  confirmed=false; roundResolved=false; cachedRoundImg=-1;
+  const owner=currentRound%4;
+  turnQueue=[owner];
+  for(let i=1;i<=3;i++) turnQueue.push((owner+i)%4);
+  currentTurnIdx=0;
+
+  document.getElementById("round-info").textContent="Round "+(currentRound+1)+" / "+ROUNDS.length;
+  document.getElementById("question-label").textContent=ROUNDS[currentRound].label;
+  document.getElementById("result-box").classList.remove("visible");
+  document.getElementById("next-btn").style.display="none";
+  document.getElementById("confirm-btn").disabled=false;
+  hideStealBox();
+  hideAnswerReveal();
+  updateTeamPills();
+  setActivePill(owner,false);
+  setTurnBanner(owner,false);
+  resetPicker();
+  renderScene("#888888");
+}
+
+// ═══════════════════════════════════════════════════════
+//  ▸ CONFIRM GUESS
+// ═══════════════════════════════════════════════════════
+function confirmGuess(){
+  if(confirmed||roundResolved) return;
+  confirmed=true;
+  document.getElementById("confirm-btn").disabled=true;
+
+  const roundIdx  = currentRound;
+  const guessHex  = lastGuessHex;
+  const guessRGB  = hexToRgb(guessHex);
+  const answerRGB = ROUNDS[roundIdx].answerRGB;
+  const pct       = similarityPct(guessRGB, answerRGB);
+  const points    = calcPoints(pct);
+  const teamIdx   = turnQueue[currentTurnIdx];
+  const remaining = turnQueue.slice(currentTurnIdx+1);
+
+  if(pct >= SIMILARITY_THRESHOLD){
+    // ── SUCCESS — show answer swatch, leave canvas untouched ──
+    roundResolved=true;
+    teamScores[teamIdx]+=points;
+    updateTeamPills();
+    showResultBox(pct, points, teamIdx, false, false);
+    showAnswerReveal(guessHex, answerRGB);
+    hideStealBox();
+    showToast(currentTurnIdx>0
+      ? "⚡ "+TEAMS[teamIdx].name+" STEALS! "+pct+"% → +"+points+" pts"
+      : "🎯 "+TEAMS[teamIdx].name+" scores! "+pct+"% → +"+points+" pts"
+    );
+    if(pct>=90) launchConfetti(2500);
+    document.getElementById("next-btn").textContent =
+      currentRound < ROUNDS.length-1 ? "NEXT ROUND →" : "SEE RESULTS 🏆";
+    document.getElementById("next-btn").style.display="block";
+
+  } else if(remaining.length===0){
+    // ── ALL TEAMS FAILED — show answer swatch, no points ──
+    roundResolved=true;
+    showResultBox(pct, 0, teamIdx, false, true);
+    showAnswerReveal(guessHex, answerRGB);
+    hideStealBox();
+    showToast("😬 No team reached "+SIMILARITY_THRESHOLD+"% — no points this round");
+    document.getElementById("next-btn").textContent =
+      currentRound < ROUNDS.length-1 ? "NEXT ROUND →" : "SEE RESULTS 🏆";
+    document.getElementById("next-btn").style.display="block";
+
+  } else {
+    // ── FAILED — pass to next team, canvas stays as-is ──
+    showResultBox(pct, 0, teamIdx, true, false);
+    showToast(TEAMS[teamIdx].name+" got "+pct+"% — below "+SIMILARITY_THRESHOLD+"%. Next team steals!");
+    currentTurnIdx++;
+    const nextTeam   = turnQueue[currentTurnIdx];
+    const teamsAfter = turnQueue.slice(currentTurnIdx+1).length;
+    setTimeout(()=>{
+      confirmed=false;
+      document.getElementById("result-box").classList.remove("visible");
+      document.getElementById("confirm-btn").disabled=false;
+      setActivePill(nextTeam, true);
+      setTurnBanner(nextTeam, true);
+      showStealBox(nextTeam, teamsAfter);
+      resetPicker();
+    }, 2200);
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  ▸ ADVANCE
+// ═══════════════════════════════════════════════════════
+function advanceGame(){
+  currentRound++;
+  if(currentRound>=ROUNDS.length){ showWinner(); return; }
+  setupRound();
+}
+
+// ═══════════════════════════════════════════════════════
+//  ▸ WINNER SCREEN
+// ═══════════════════════════════════════════════════════
+function showWinner(){
+  const max=Math.max(...teamScores);
+  const winners=TEAMS.filter((_,i)=>teamScores[i]===max);
+  const isTie=winners.length>1;
+  const nameEl=document.getElementById("winner-name");
+  const scoreEl=document.getElementById("winner-score");
+  if(isTie){
+    nameEl.textContent=winners.map(t=>t.emoji+" "+t.name).join(" & ");
+    nameEl.style.color="#f5c518";
+    scoreEl.textContent="TIE — "+max+" pts each";
+  } else {
+    const idx=TEAMS.indexOf(winners[0]);
+    nameEl.textContent=winners[0].emoji+" "+winners[0].name;
+    nameEl.style.color=TEAM_COLORS[idx];
+    scoreEl.textContent=max+" points";
+  }
+  const sorted=TEAMS.map((t,i)=>({t,i,s:teamScores[i]})).sort((a,b)=>b.s-a.s);
+  document.getElementById("final-scores").innerHTML=sorted.map(({t,i,s})=>`
+    <div class="final-row ${s===max?"winner-row":""}"
+         style="background:${TEAM_BG[i]};color:${TEAM_COLORS[i]}">
+      <span>${t.emoji} ${t.name}</span>
+      <span style="font-weight:700">${s} pts</span>
+    </div>`).join("");
+  document.getElementById("winner-overlay").classList.add("visible");
+  launchConfetti(7000);
+}
+
+// ═══════════════════════════════════════════════════════
+//  ▸ CONFETTI
+// ═══════════════════════════════════════════════════════
+let confettiAnim=null;
+function launchConfetti(duration=2500){
+  const canvas=document.getElementById("confetti-canvas");
+  const ctx=canvas.getContext("2d");
+  canvas.width=window.innerWidth; canvas.height=window.innerHeight;
+  const colors=["#e94560","#f5c518","#4ecca3","#5bc8ff","#d08aff","#ffaa55","#5fffaa","#ff6b6b"];
+  const pieces=Array.from({length:180},()=>({
+    x:Math.random()*canvas.width, y:Math.random()*canvas.height-canvas.height,
+    w:Math.random()*8+4, h:Math.random()*14+6,
+    color:colors[Math.floor(Math.random()*colors.length)],
+    rot:Math.random()*Math.PI*2,
+    vx:(Math.random()-0.5)*3, vy:Math.random()*4+2, vr:(Math.random()-0.5)*0.2,
+  }));
+  if(confettiAnim) cancelAnimationFrame(confettiAnim);
+  const end=Date.now()+duration;
+  function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    pieces.forEach(p=>{
+      p.x+=p.vx; p.y+=p.vy; p.rot+=p.vr;
+      if(p.y>canvas.height){p.y=-20;p.x=Math.random()*canvas.width;}
+      ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot);
+      ctx.fillStyle=p.color; ctx.fillRect(-p.w/2,-p.h/2,p.w,p.h);
+      ctx.restore();
+    });
+    if(Date.now()<end) confettiAnim=requestAnimationFrame(draw);
+    else ctx.clearRect(0,0,canvas.width,canvas.height);
+  }
+  draw();
+}
+
+// ═══════════════════════════════════════════════════════
+//  ▸ INIT
+// ═══════════════════════════════════════════════════════
+function initPickerCanvases(){
+  svCanvas.width=svCanvas.offsetWidth||280; svCanvas.height=svCanvas.offsetHeight||200;
+  hueCanvas.width=hueCanvas.offsetWidth||280; hueCanvas.height=hueCanvas.offsetHeight||16;
+  drawSVSquare(); drawHueBar();
+}
+
+requestAnimationFrame(()=>{ initPickerCanvases(); setupRound(); });
+</script>
+</body>
+</html>
